@@ -8,7 +8,7 @@ Osobní informace pacientů podmíněné přihlášením do modulu [Pacienti COV
 
 ## Účel
 
-Nalézt žádanky s uvedeným neplatným číslem pojištěnce ke dni vystavení a pokusit se nalézt platné číslo pojištěnce ke dni vystavení.
+Nalézt žádanky s uvedeným neplatným číslem pojištěnce ke dni vystavení a pokusit se nalézt platné číslo pojištěnce ke dni vystavení a datu této kontroly (dnešnímu datumu).
 
 ## Použití
 
