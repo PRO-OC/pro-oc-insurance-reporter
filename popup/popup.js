@@ -1,5 +1,10 @@
 // Duplikované v options/options.js
-const chromeLocalStorageOptionsNamespace = "pro-oc-vzp-b2b-options";
+const chromeLocalStorageOptionsNamespace = "pro-oc-insurance-reporter";
+
+const B2B_SERVER_URL = "B2BServerUrl";
+const POINT_SERVER_URL = "PointServerUrl";
+const ENCRYPTING_DISABLED = "EncryptingDisabled";
+const ENCRYPTING_PASSWORD = "EncryptingPassword";
 
 const DEFAULT_B2B_PROD_SERVER_URL = 'https://prod.b2b.vzp.cz';
 
@@ -145,43 +150,69 @@ function padStart(num, padLen, padChar) {
     return (pad + num).slice(-pad.length);
 }
 
+function getPrubehPojisteniDruhB2BPage() {
+    return "/B2BProxy/HttpProxy/PrubehPojisteniDruhB2B";
+}
+
 function PrubehPojisteniDruhB2B(CisloPojistence, KontrolaKeDni, onSuccess, onError) {
 
     return new Promise(function (resolve, reject) {
 
         getOptionsFromLocalStorage(function(optionsURLSearchParams) {
-  
+        
             var options = new URLSearchParams(optionsURLSearchParams);
-      
             var B2BServerUrlFromOptions = options.get("B2BServerUrl");
-
-            var xmlhttp = new XMLHttpRequest();
-
+            var B2BServerUrl = B2BServerUrlFromOptions ? B2BServerUrlFromOptions : DEFAULT_B2B_PROD_SERVER_URL;
+        
+            var EncryptingDisabled = options.get("EncryptingDisabled") == "true" ? true : false;
+            var EncryptingPassword = options.get("EncryptingPassword");
+        
             var KontrolaKeDniString = KontrolaKeDni.getFullYear() + "-" + padStart((KontrolaKeDni.getMonth() + 1 ), 2, "0") + "-" + padStart(KontrolaKeDni.getDate(), 2, "0");
   
-            var sr = "<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\">\r\n\t<soap:Body xmlns:ns1=\"http://xmlns.gemsystem.cz/PrubehPojisteniDruhB2B\">\r\n\t\t<ns1:prubehPojisteniDruhB2BPozadavek>\r\n\t\t<ns1:cisloPojistence>" + CisloPojistence + "</ns1:cisloPojistence>\r\n\t\t<ns1:kDatu>" + KontrolaKeDniString + "</ns1:kDatu>\r\n\t\t</ns1:prubehPojisteniDruhB2BPozadavek>\r\n\t</soap:Body>\r\n</soap:Envelope>";
-
-            xmlhttp.open('POST', (B2BServerUrlFromOptions ? B2BServerUrlFromOptions : DEFAULT_B2B_PROD_SERVER_URL) + "/B2BProxy/HttpProxy/PrubehPojisteniDruhB2B", true);
-            //xmlhttp.withCredentials = true;
-            xmlhttp.setRequestHeader('Content-Type', 'text/xml');
-            xmlhttp.onreadystatechange = function () {
-                if(xmlhttp.readyState === XMLHttpRequest.DONE) {
-  
-                    if(xmlhttp.status == 200) {
-                        var results = {
-                            "stav": getSoapTagValue(xmlhttp.response, "stav"),
-                            "kodPojistovny": getSoapTagValue(xmlhttp.response, "kodPojistovny"),
-                            "nazevPojistovny": getSoapTagValue(xmlhttp.response, "nazevPojistovny"),
-                            "druhPojisteni": getSoapTagValue(xmlhttp.response, "druhPojisteni")
-                        };
-                        onSuccess(results);
-                    } else {
+            var body = "<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"><soap:Body xmlns:ns1=\"http://xmlns.gemsystem.cz/PrubehPojisteniDruhB2B\"><ns1:prubehPojisteniDruhB2BPozadavek><ns1:cisloPojistence>" + CisloPojistence + "</ns1:cisloPojistence><ns1:kDatu>" + KontrolaKeDniString + "</ns1:kDatu></ns1:prubehPojisteniDruhB2BPozadavek></soap:Body></soap:Envelope>";
+        
+            var url = B2BServerUrl + getPrubehPojisteniDruhB2BPage();
+        
+            const encryptedBody = getRequestBody(EncryptingDisabled, body, EncryptingPassword);
+        
+            fetch(url, {
+                method: 'post',
+                headers: {
+                    "Content-type": getContentType(EncryptingDisabled)
+                },
+                body: encryptedBody
+            })
+            .then(function (response) {
+                if (response.status == 200) {
+                    try {
+                        response.text().then(function(responseText) {
+        
+                            var text = getResponseBody(EncryptingDisabled, responseText, EncryptingPassword);
+        
+                            var results = {
+                                "stav": getSoapTagValue(text, "stav"),
+                                "kodPojistovny": getSoapTagValue(text, "kodPojistovny"),
+                                "nazevPojistovny": getSoapTagValue(text, "nazevPojistovny"),
+                                "druhPojisteni": getSoapTagValue(text, "druhPojisteni")
+                            };
+                            onSuccess(results);
+                            resolve();
+                        });
+                    } catch(err) {
+                        console.log(err)
                         onError();
+                        resolve();
                     }
+                } else {
+                    onError();
                     resolve();
                 }
-            }
-            xmlhttp.send(sr);
+            })
+            .catch(function (error) {
+                console.log(error);
+                onError();
+                resolve();
+            });
         });
     });
 }
@@ -322,8 +353,25 @@ function loadOckoUzisPatientInfo(zadanka, callback) {
 async function reportCorrectInsuranceFromProfiles(index, ZadankaData, KontrolaKeDni, PacientProfiles, onSuccess) {
 
     if(PacientProfiles.length == 0) {
-        console.log("Vyžádaná úprava k Excel řádku č. " + index + ". Žádanka č. " + ZadankaData.Cislo + ". Uvedené pojištění: `" + ZadankaData.TestovanyCisloPojistence + "` na žádance nebylo v den vystavení žádanky: `"+ KontrolaKeDni + "` platné. Pro danou osobu se nepodařil najít v ISIN žádný profil, který by odpovídalo jménu, přijmení, datumu narození a státní příslušnosti ze žádanky.");
-        onSuccess();
+
+        OvereniPlatnostiPojisteni(ZadankaData.TestovanyJmeno, ZadankaData.TestovanyPrijmeni, ZadankaData.TestovanyDatumNarozeniText, KontrolaKeDni, function(responseOvereniPlatnostiPojisteni) {
+            if(responseOvereniPlatnostiPojisteni.cisloPojistence) {
+                iHaveValidInsuranceKeDni(
+                    responseOvereniPlatnostiPojisteni.cisloPojistence,
+                    index,
+                    ZadankaData,
+                    KontrolaKeDni,
+                    responseOvereniPlatnostiPojisteni,
+                    function() {
+                        onSuccess();
+                    }
+                );
+            } else {
+                console.log("Vyžádaná úprava k Excel řádku č. " + index + ". Žádanka č. " + ZadankaData.Cislo + ". Uvedené pojištění: `" + ZadankaData.TestovanyCisloPojistence + "` na žádance nebylo v den vystavení žádanky: `"+ KontrolaKeDni + "` platné. Pro danou osobu se nepodařilo nalézt číslo pojištěnce, které by v danou chvíli platné bylo.");
+                onSuccess();
+                return;
+            }
+        });
         return;
     }
 
@@ -342,26 +390,165 @@ async function reportCorrectInsuranceFromProfiles(index, ZadankaData, KontrolaKe
             });
         }
 
-        if(pacientCounter + 1 >= PacientProfiles.length) {
+        if(
+            pacientCounter + 1 >= PacientProfiles.length ||
+            CisloPojistence) {
 
             if(CisloPojistence) {
 
-                // zda je pojištění platné i dnešní datum
-                PrubehPojisteniDruhB2B(CisloPojistence, new Date(), function(Result) {
-                    if (Result && Result.stav == "pojisten") {
-                        var dateNow = new Date();
-                        console.log("Vyžádaná úprava k Excel řádku č. " + index + ". Žádanka č. " + ZadankaData.Cislo + ". Uvedené pojištění: `" + ZadankaData.TestovanyCisloPojistence + "` na žádance nebylo v den vystavení žádanky: `"+ KontrolaKeDni+ "` platné. Pro danou osobu se ale podařilo na profilu v ISIN číslo: `" + PacientInfo.Cislo + "` přečíst číslo pojištěnce: `" + CisloPojistence + "`, které v danou chvíli platné bylo. K datu této kontroly platné je: `" + dateNow.toString() + "`.");
-                    } else {
-                        console.log("Vyžádaná úprava k Excel řádku č. " + index + ". Žádanka č. " + ZadankaData.Cislo + ". Uvedené pojištění: `" + ZadankaData.TestovanyCisloPojistence + "` na žádance nebylo v den vystavení žádanky: `"+ KontrolaKeDni+ "` platné. Pro danou osobu se ale podařilo na profilu v ISIN číslo: `" + PacientInfo.Cislo + "` přečíst číslo pojištěnce: `" + CisloPojistence + "`, které v danou chvíli platné bylo. K datu této kontroly platné ale není: `" + dateNow.toString() + "`.");
+                pacientCounter = PacientProfiles.length;
+
+                iHaveValidInsuranceKeDni(
+                    CisloPojistence,
+                    index,
+                    ZadankaData,
+                    KontrolaKeDni,
+                    null,
+                    function() {
+                        onSuccess();
                     }
-                });
+                );
             } else {
-                console.log("Vyžádaná úprava k Excel řádku č. " + index + ". Žádanka č. " + ZadankaData.Cislo + ". Uvedené pojištění: `" + ZadankaData.TestovanyCisloPojistence + "` na žádance nebylo v den vystavení žádanky: `"+ KontrolaKeDni + "` platné. Pro danou osobu se nepodařilo na nalezeném profilu v ISIN přečíst číslo pojištěnce, které by v danou chvíli platné bylo.");
+                OvereniPlatnostiPojisteni(ZadankaData.TestovanyJmeno, ZadankaData.TestovanyPrijmeni, ZadankaData.TestovanyDatumNarozeniText, KontrolaKeDni, function(responseOvereniPlatnostiPojisteni) {
+                    if(responseOvereniPlatnostiPojisteni.cisloPojistence) {
+                        iHaveValidInsuranceKeDni(
+                            responseOvereniPlatnostiPojisteni.cisloPojistence,
+                            index,
+                            ZadankaData,
+                            KontrolaKeDni,
+                            responseOvereniPlatnostiPojisteni,
+                            function() {
+                                onSuccess();
+                            }
+                        );
+                    } else {
+                        console.log("Vyžádaná úprava k Excel řádku č. " + index + ". Žádanka č. " + ZadankaData.Cislo + ". Uvedené pojištění: `" + ZadankaData.TestovanyCisloPojistence + "` na žádance nebylo v den vystavení žádanky: `"+ KontrolaKeDni + "` platné. Pro danou osobu se nepodařilo nalézt číslo pojištěnce, které by v danou chvíli platné bylo.");
+                        onSuccess();
+                    }
+                },
+                function() {
+                    onSuccess();
+                });
             }
-            onSuccess();
         }
     }
 }
+
+function iHaveValidInsuranceKeDni(CisloPojistence, index, ZadankaData, kontrolaKeDni, responseOvereniPlatnostiPojisteni, onSuccess) {
+    var kontrolaKeDniString = getDateDDdotMMdotYYYY(kontrolaKeDni);
+
+    PrubehPojisteniDruhB2B(CisloPojistence, new Date(), function(Result) {
+
+        var dateNow = new Date();
+        if (Result && Result.stav == "pojisten") {
+            console.log("Vyžádaná úprava k Excel řádku č. " + index + ". Žádanka č. " + ZadankaData.Cislo + ". Uvedené pojištění: `" + ZadankaData.TestovanyCisloPojistence + "` na žádance nebylo v den vystavení žádanky: `"+ kontrolaKeDniString + "` platné. Pro danou osobu se ale podařilo zjistit číslo pojištěnce: `" + CisloPojistence + "`, které v danou chvíli platné bylo. K datu této kontroly platné stále je: `" + dateNow.toString() + "`. Kód pojišťovny: `" + Result.kodPojistovny + "`.");
+        } else {
+            console.log("Vyžádaná úprava k Excel řádku č. " + index + ". Žádanka č. " + ZadankaData.Cislo + ". Uvedené pojištění: `" + ZadankaData.TestovanyCisloPojistence + "` na žádance nebylo v den vystavení žádanky: `"+ kontrolaKeDniString + "` platné. Pro danou osobu se ale podařilo zjistit číslo pojištěnce: `" + CisloPojistence + "`, které v danou chvíli platné bylo. K datu této kontroly platné ale není: `" + dateNow.toString() + "`. Kód pojišťovny: `" + responseOvereniPlatnostiPojisteni.zdravotniPojistovna.split('-')[0] + "`.");
+        }
+        onSuccess();
+    },
+    function() {
+        onSuccess();
+    });
+}
+
+function getDateDDdotMMdotYYYY(dateObj) {
+    return dateObj.getDate() + "." + (dateObj.getMonth() + 1) + "." + dateObj.getFullYear();
+}
+
+function getOvereniPlatnostiPojisteniUrlParams(jmeno, prijmeni, datumNarozeni, datumKontroly) {
+    var urlParams = new URLSearchParams();
+    urlParams.set("firstName", jmeno);
+    urlParams.set("lastName", prijmeni);
+    urlParams.set("dateBirth", datumNarozeni);
+    urlParams.set("until", datumKontroly);
+    return urlParams;
+}
+
+function getOvereniPlatnostiPojisteniPage() {
+    return "/online/online01";
+}
+
+function encryptBody(body, key) {
+    let encJson = CryptoJS.AES.encrypt(JSON.stringify( { body }), key).toString();
+    let encData = CryptoJS.enc.Base64.stringify(CryptoJS.enc.Utf8.parse(encJson));
+    return encData;
+}
+
+function decryptBody(body, key) {
+    let decData = CryptoJS.enc.Base64.parse(body).toString(CryptoJS.enc.Utf8);
+    let bytes = CryptoJS.AES.decrypt(decData, key).toString(CryptoJS.enc.Utf8);
+    return JSON.parse(bytes).body;
+}
+
+function getContentType(EncryptingDisabled) {
+    return !EncryptingDisabled ? "text/plain" : "text/xml";
+}
+
+function getRequestBody(EncryptingDisabled, body, key) {
+    return !EncryptingDisabled ? encryptBody(body, key) : body
+}
+
+function getResponseBody(EncryptingDisabled, body, key) {
+    return !EncryptingDisabled ? decryptBody(body, key) : body;
+}
+
+function OvereniPlatnostiPojisteni(jmeno, prijmeni, datumNarozeni, kontrolaKeDni, onSuccess, onError) {
+
+    getOptionsFromLocalStorage(function(optionsURLSearchParams) {
+
+        var options = new URLSearchParams(optionsURLSearchParams);
+        var ServerUrlFromOptions = options.get(POINT_SERVER_URL);
+
+        if(!ServerUrlFromOptions) {
+            onError();
+        }
+
+        var EncryptingDisabled = options.get(ENCRYPTING_DISABLED) == "true" ? true : false;
+        var EncryptingPassword = options.get(ENCRYPTING_PASSWORD);
+
+        var url = ServerUrlFromOptions + getOvereniPlatnostiPojisteniPage();
+
+        var kontrolaKeDniString = getDateDDdotMMdotYYYY(kontrolaKeDni);
+
+        var urlParams = getOvereniPlatnostiPojisteniUrlParams(jmeno, prijmeni, datumNarozeni, kontrolaKeDniString);
+
+        fetch(url + "?" + urlParams.toString(), {
+            method: 'get',
+            headers: {
+                "Content-type": getContentType(EncryptingDisabled)
+            }
+        })
+        .then(function (response) {
+            if (response.status == 200) {
+                try {
+                    response.text().then(function(responseText) {
+
+                        var results = getResponseBody(EncryptingDisabled, responseText, EncryptingPassword);
+
+                        var results = {
+                            "shrnuti": results.shrnuti,
+                            "cisloPojistence": results.cisloPojistence,
+                            "druhPojisteni": results.druhPojisteni,
+                            "zdravotniPojistovna": results.zdravotniPojistovna,
+                        };
+                        onSuccess(results);
+                    });
+                } catch(err) {
+                    console.log(err)
+                    onError();
+                }
+            } else {
+                onError();
+            }
+        })
+        .catch(function (error) {
+            console.log(error);
+            onError();
+        });
+    });
+}
+
 
 function reportNotCorrectInsurance(index, ZadankaData, onSuccess) {
 
@@ -399,13 +586,16 @@ function reportAllNotCorrectInsurances(index, CisloZadanky) {
 
         getZadankaData(CisloZadanky).then(function(ZadankaData) {
             if(
-                ZadankaData.TestovanyZdravotniPojistovnaKod == "111" ||
-                ZadankaData.TestovanyZdravotniPojistovnaKod == "201" ||
-                ZadankaData.TestovanyZdravotniPojistovnaKod == "205" ||
-                ZadankaData.TestovanyZdravotniPojistovnaKod == "207" ||
-                ZadankaData.TestovanyZdravotniPojistovnaKod == "209" ||
-                ZadankaData.TestovanyZdravotniPojistovnaKod == "211" ||
-                ZadankaData.TestovanyZdravotniPojistovnaKod == "213" &&
+                ZadankaData && 
+                (
+                    ZadankaData.TestovanyZdravotniPojistovnaKod == "111" ||
+                    ZadankaData.TestovanyZdravotniPojistovnaKod == "201" ||
+                    ZadankaData.TestovanyZdravotniPojistovnaKod == "205" ||
+                    ZadankaData.TestovanyZdravotniPojistovnaKod == "207" ||
+                    ZadankaData.TestovanyZdravotniPojistovnaKod == "209" ||
+                    ZadankaData.TestovanyZdravotniPojistovnaKod == "211" ||
+                    ZadankaData.TestovanyZdravotniPojistovnaKod == "213"
+                ) &&
                 ZadankaData.TypTestuKod == "PCR"
             ) {
                 //console.log(index, ZadankaData.Cislo); // testing purpose only
