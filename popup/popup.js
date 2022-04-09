@@ -443,7 +443,7 @@ function iHaveValidInsuranceKeDni(CisloPojistence, index, ZadankaData, kontrolaK
         if (Result && Result.stav == "pojisten") {
             console.log("Vyžádaná úprava k Excel řádku č. " + index + ". Žádanka č. " + ZadankaData.Cislo + ". Uvedené pojištění: `" + ZadankaData.TestovanyCisloPojistence + "` na žádance nebylo v den vystavení žádanky: `"+ kontrolaKeDniString + "` platné. Pro danou osobu se ale podařilo zjistit číslo pojištěnce: `" + CisloPojistence + "`, které v danou chvíli platné bylo. K datu této kontroly platné stále je: `" + dateNow.toString() + "`. Kód pojišťovny: `" + Result.kodPojistovny + "`.");
         } else {
-            console.log("Vyžádaná úprava k Excel řádku č. " + index + ". Žádanka č. " + ZadankaData.Cislo + ". Uvedené pojištění: `" + ZadankaData.TestovanyCisloPojistence + "` na žádance nebylo v den vystavení žádanky: `"+ kontrolaKeDniString + "` platné. Pro danou osobu se ale podařilo zjistit číslo pojištěnce: `" + CisloPojistence + "`, které v danou chvíli platné bylo. K datu této kontroly platné ale není: `" + dateNow.toString() + "`. Kód pojišťovny: `" + responseOvereniPlatnostiPojisteni.zdravotniPojistovna.split('-')[0] + "`.");
+            console.log("Vyžádaná úprava k Excel řádku č. " + index + ". Žádanka č. " + ZadankaData.Cislo + ". Uvedené pojištění: `" + ZadankaData.TestovanyCisloPojistence + "` na žádance nebylo v den vystavení žádanky: `"+ kontrolaKeDniString + "` platné. Pro danou osobu se ale podařilo zjistit číslo pojištěnce: `" + CisloPojistence + "`, které v danou chvíli platné bylo. K datu této kontroly platné ale není: `" + dateNow.toString() + "`.");
         }
         onSuccess();
     },
